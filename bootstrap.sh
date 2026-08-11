@@ -72,6 +72,19 @@ link "$HOME/.claude/CLAUDE.md"      "$DOTFILES_LINK/home/AGENTS.md"
 link "$HOME/.codex/AGENTS.md"       "$DOTFILES_LINK/home/AGENTS.md"
 link "$HOME/.config/opencode/AGENTS.md" "$DOTFILES_LINK/home/AGENTS.md"
 
+echo "==> Step 2b: Pi config (opt-in alternate agent)"
+# Mirror home.nix: link only authored Pi files/dirs; credentials & runtime state stay local.
+PI_LINK="$DOTFILES_LINK/home/.pi/agent"
+if command -v pi >/dev/null 2>&1; then
+  link "$HOME/.pi/agent/themes"          "$PI_LINK/themes"
+  link "$HOME/.pi/agent/extensions"      "$PI_LINK/extensions"
+  link "$HOME/.pi/agent/models.json"     "$PI_LINK/models.json"
+  link "$HOME/.pi/agent/settings.json"   "$PI_LINK/settings.json"
+  echo "    pi detected: linked theme/extensions/models/settings"
+else
+  echo "    SKIP: pi not installed. (npm i -g @earendil-works/pi-coding-agent to use it)"
+fi
+
 echo "==> Step 3: shell helpers (idempotent, appended only)"
 SHELLRC="$HOME/.bashrc"
 cat >> "$SHELLRC" <<'EOS'
