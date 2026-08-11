@@ -1,117 +1,149 @@
 #!/usr/bin/env bash
-# dotfiles-wsl - reproduce kunchenguid/dotfiles bootstrap for WSL/Ubuntu.
-# One command takes a fresh WSL from nothing to a configured agent home.
-# Run this once per machine; re-run to re-apply (idempotent).
-# The "home/" files are the real files; this symlinks them into place so
-# editing home/AGENTS.md edits your live agent policy (edit-in-place model).
+# dotfiles-wsl - one-shot WSL agent home installer.
+# Reproduces kunchenguid/dotfiles (in bash, no Nix) AND auto-installs the full
+# FirstMate-adjacent stack into WSL: jq, neovim, herdr (pinned), treehouse
+# (pinned), wezterm/herdr/nvim configs, plus auto-detect of agent CLIs.
+# Re-run anytime (idempotent). User-space only: NO sudo required.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 HOME_DIR="$REPO_DIR/home"
-DOTFILES_LINK="$HOME/.dotfiles-wsl"
+LINK="$HOME/.dotfiles-wsl"
+BIN_DIR="$HOME/.local/bin"
+FIRSTMATE_DIR="$HOME/firstmate"
 
-echo "==> Step 0: prerequisites"
-for t in git tmux node claude gh jq; do
-  if command -v "$t" >/dev/null 2>&1; then echo "    ok: $t"; else echo "    MISSING: $t"; fi
+mkdir -p "$BIN_DIR"
+export PATH="$BIN_DIR:$PATH"
+
+[ "$(command -v curl)" ] || { echo "dotfiles-wsl: curl is required" >&2; exit 1; }
+
+say()  { printf '==> %s\n' "$*"; }
+ok()   { printf '    ok: %s\n' "$*"; }
+skip() { printf '    skip: %s\n' "$*"; }
+need() { printf '    MISSING: %s\n' "$*"; }
+
+###############################################################################
+say "Step 0: link this repo"
+###############################################################################
+if [ -L "$LINK" ] && [ "$(readlink -f "$LINK")" = "$REPO_DIR" ]; then
+  ok "already linked"
+else
+  ln -sfn "$REPO_DIR" "$LINK"; ok "linked $LINK -> $REPO_DIR"
+fi
+
+###############################################################################
+say "Step 1: configs (edit-in-place symlinks)"
+###############################################################################
+link() {
+  local t="$1" s="$2"; mkdir -p "$(dirname "$t")"
+  if [ -e "$t" ] && [ ! -L "$t" ]; then skip "real file present: $t (leave as-is)"; return 0; fi
+  ln -sfn "$s" "$t"; ok "link $t"
+}
+rel="home"
+link "$HOME/.claude/CLAUDE.md"            "$LINK/$rel/AGENTS.md"
+link "$HOME/.codex/AGENTS.md"             "$LINK/$rel/AGENTS.md"
+link "$HOME/.config/opencode/AGENTS.md"   "$LINK/$rel/AGENTS.md"
+link "$HOME/.config/nvim"                 "$LINK/$rel/.config/nvim"
+link "$HOME/.config/wezterm"              "$LINK/$rel/.config/wezterm"
+link "$HOME/.config/herdr"                "$LINK/$rel/.config/herdr"
+# claude settings.json - MERGED (preserve live hooks/keys)
+if [ -e "$HOME/.claude/settings.json" ] && [ ! -L "$HOME/.claude/settings.json" ]; then
+  ok "claude settings.json already live (left untouched; see home/ for reference)"
+else
+  link "$HOME/.claude/settings.json"      "$LINK/$rel/.claude/settings.json"
+fi
+
+###############################################################################
+say "Step 2: user-space tools (no sudo)"
+###############################################################################
+# jq - static single binary
+if command -v jq >/dev/null 2>&1; then ok "jq $($BIN_DIR/jq --version 2>/dev/null || jq --version)"
+else
+  say "installing jq (static)"
+  JQ_VER=1.7.1
+  curl -fsSL "https://github.com/jqlang/jq/releases/download/jq-${JQ_VER}/jq-linux-amd64" -o "$BIN_DIR/jq.tmp"
+  chmod +x "$BIN_DIR/jq.tmp" && mv "$BIN_DIR/jq.tmp" "$BIN_DIR/jq"
+  ok "jq $("$BIN_DIR/jq" --version)"
+fi
+
+# Neovim - official linux-x64 tarball, user-space
+if command -v nvim >/dev/null 2>&1; then ok "nvim $(nvim --version | head -1)"
+else
+  say "installing neovim (official tarball)"
+  NV=0.10.4
+  curl -fsSL "https://github.com/neovim/neovim/releases/download/v${NV}/nvim-linux-x86_64.tar.gz" -o "$BIN_DIR/nvim.tar.gz"
+  tar -xzf "$BIN_DIR/nvim.tar.gz" -C "$BIN_DIR"
+  rm -f "$BIN_DIR/nvim.tar.gz"
+  # expose nvim on PATH via a symlink inside ~/.local/bin
+  ln -sf "$BIN_DIR/nvim-linux-x86_64/bin/nvim" "$BIN_DIR/nvim"
+  ok "nvim version $NV -> $BIN_DIR/nvim"
+fi
+
+###############################################################################
+say "Step 3: firstmate deps (pinned, checksum-verified)"
+###############################################################################
+herdr_install() {
+  if command -v herdr >/dev/null 2>&1; then ok "herdr $("$BIN_DIR/herdr" --version 2>/dev/null || herdr --version)"; return 0; fi
+  if [ -x "$FIRSTMATE_DIR/bin/fm-install-herdr.sh" ]; then
+    say "installing herdr via firstmate pinned installer"
+    bash "$FIRSTMATE_DIR/bin/fm-install-herdr.sh" "$BIN_DIR" || need "herdr install failed"
+    ok "herdr installed"
+  else need "herdr installer not found (clone ~/firstmate first)"
+  fi
+}
+herdr_install
+
+treehouse_install() {
+  if command -v treehouse >/dev/null 2>&1; then ok "treehouse present"; return 0; fi
+  if [ -x "$FIRSTMATE_DIR/bin/fm-install-treehouse.sh" ]; then
+    say "installing treehouse via firstmate pinned installer"
+    bash "$FIRSTMATE_DIR/bin/fm-install-treehouse.sh" "$BIN_DIR" || need "treehouse install failed"
+    ok "treehouse installed"
+  else need "treehouse installer not found (clone ~/firstmate first)"
+  fi
+}
+treehouse_install
+
+###############################################################################
+say "Step 4: agent CLIs (auto-detect, skip clean when absent)"
+###############################################################################
+for name in claude codex pi opencode; do
+  if command -v "$name" >/dev/null 2>&1; then ok "$name: $("$name" --version 2>/dev/null | head -1 || true)"
+  else skip "$name not installed (no official unattended installer wired)"
+  fi
 done
 
-echo "==> Step 1: symlink this repo to ~/.dotfiles-wsl"
-if [ -L "$DOTFILES_LINK" ] && [ "$(readlink -f "$DOTFILES_LINK")" = "$REPO_DIR" ]; then
-  echo "    already linked"
-else
-  ln -sfn "$REPO_DIR" "$DOTFILES_LINK"
-  echo "    linked $DOTFILES_LINK -> $REPO_DIR"
-fi
-
-echo "==> Step 2: symlink config files (edit-in-place)"
-# Mirror of home.nix's mkOutOfStoreSymlink. Each path is replaced by a symlink
-# pointing at the real file in this repo, so the two never drift.
-link() {
-  local target="$1" src="$2"
-  mkdir -p "$(dirname "$target")"
-  if [ -e "$target" ] && [ ! -L "$target" ]; then
-    echo "    SKIP (real file present, not a symlink): $target"
-    echo "          move it aside or delete it, then re-run to link"
-    return 0
-  fi
-  ln -sfn "$src" "$target"
-  echo "    link $target -> $src"
-}
-
-merge_json() {
-  # Merge a repo-provided JSON file (src) INTO an existing live file (target),
-  # preserving the live file's keys. Uses python3 (present on WSL).
-  local target="$1" src="$2"
-  if [ -e "$target" ] && [ ! -L "$target" ] && command -v python3 >/dev/null 2>&1; then
-    cp "$target" "$target.dotfiles-wsl.bak"
-    python3 - "$target" "$src" <<'PY'
-import json, sys
-target, src = sys.argv[1], sys.argv[2]
-live = json.load(open(target)); repo = json.load(open(src))
-# live keys win; repo provides anything missing. Hooks: append repo hooks for
-# events not already present, keeping live hooks authoritative.
-out = dict(repo); out.update(live)
-lh = live.get("hooks", {}); rh = repo.get("hooks", {})
-merged_hooks = dict(rh)
-for evt, entries in lh.items():
-    # Live entries for this event win; repo provides the event if absent.
-    merged_hooks[evt] = entries
-out["hooks"] = merged_hooks
-json.dump(out, open(target, "w"), indent=2)
-print("    merged repo settings INTO live %s (backup: %s)" % (target, target + ".dotfiles-wsl.bak"))
-PY
-    return 0
-  fi
-  # No live file, or no python3: fall back to plain symlink (link()).
-  link "$target" "$src"
-}
-
-# settings.json: merge so live hooks/keys survive; AGENTS files: symlink.
-merge_json "$HOME/.claude/settings.json" "$DOTFILES_LINK/home/.claude/settings.json"
-link "$HOME/.claude/CLAUDE.md"      "$DOTFILES_LINK/home/AGENTS.md"
-link "$HOME/.codex/AGENTS.md"       "$DOTFILES_LINK/home/AGENTS.md"
-link "$HOME/.config/opencode/AGENTS.md" "$DOTFILES_LINK/home/AGENTS.md"
-
-echo "==> Step 2b: Pi config (opt-in alternate agent)"
-# Mirror home.nix: link only authored Pi files/dirs; credentials & runtime state stay local.
-PI_LINK="$DOTFILES_LINK/home/.pi/agent"
-if command -v pi >/dev/null 2>&1; then
-  link "$HOME/.pi/agent/themes"          "$PI_LINK/themes"
-  link "$HOME/.pi/agent/extensions"      "$PI_LINK/extensions"
-  link "$HOME/.pi/agent/models.json"     "$PI_LINK/models.json"
-  link "$HOME/.pi/agent/settings.json"   "$PI_LINK/settings.json"
-  echo "    pi detected: linked theme/extensions/models/settings"
-else
-  echo "    SKIP: pi not installed. (npm i -g @earendil-works/pi-coding-agent to use it)"
-fi
-
-echo "==> Step 3: shell helpers (idempotent, appended only)"
+###############################################################################
+say "Step 5: shell helpers"
+###############################################################################
 SHELLRC="$HOME/.bashrc"
 cat >> "$SHELLRC" <<'EOS'
 
 # ---- dotfiles-wsl (kunchenguid-style aliases, adapted) ----
 alias cc='claude'
-# high-agency, opt-in: uncomment to use like the author's `cc`
-# alias cc='claude --dangerously-skip-permissions'
+# high-agency, opt-in: alias cc='claude --dangerously-skip-permissions'
 alias firstmate='cd ~/firstmate && claude'
 alias fm-peek='bash ~/dotfiles-wsl/fm-peek.sh'
 alias fm-watch='bash ~/dotfiles-wsl/fm-watch.sh'
+export PATH="$HOME/.local/bin:$PATH"
 # ---- end dotfiles-wsl ----
 EOS
-echo "    appended aliases to $SHELLRC"
+grep -q 'HOME/.local/bin' "$SHELLRC" || printf '\n# dotfiles-wsl: gh etc\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$SHELLRC"
+ok "aliases + PATH in $SHELLRC"
 
-echo "==> Step 4: ensure gh on PATH for non-login shells"
-mkdir -p "$HOME/.local/bin"
-grep -q 'HOME/.local/bin' "$HOME/.bashrc" 2>/dev/null || \
-  printf '\n# dotfiles-wsl: gh etc\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$SHELLRC"
-echo "    ensured ~/.local/bin on PATH"
+###############################################################################
+say "Step 6: verify"
+###############################################################################
+echo "--- tools ---"
+for t in git tmux claude jq nvim herdr treehouse node gh; do
+  if command -v "$t" >/dev/null 2>&1; then echo "   [ok] $t"; else echo "   [--] $t"; fi
+done
+echo "--- agents ---"
+for t in claude codex pi opencode; do
+  if command -v "$t" >/dev/null 2>&1; then echo "   [ok] $t"; else echo "   [--] $t (not installed)"; fi
+done
+echo "--- firstmate ---"
+if [ -d "$FIRSTMATE_DIR" ]; then echo "   [ok] firstmate @ $(git -C "$FIRSTMATE_DIR" rev-parse --short HEAD 2>/dev/null || echo ?)";
+  [ -f "$FIRSTMATE_DIR/config/backend" ] && echo "         backend=$(cat "$FIRSTMATE_DIR/config/backend")" || echo "         backend=tmux (default)"; fi
 
-echo "==> Step 5: firstmate home present?"
-if [ -d "$HOME/firstmate" ]; then
-  echo "    found ~/firstmate (rev $(git -C "$HOME/firstmate" rev-parse --short HEAD 2>/dev/null || echo '?'))"
-  [ -f "$HOME/firstmate/config/backend" ] && echo "    backend: $(cat "$HOME/firstmate/config/backend")" || echo "    backend: (unset - defaults to tmux)"
-else
-  echo "    NOT FOUND - clone it:  git clone https://github.com/kunchenguid/firstmate ~/firstmate"
-fi
-
-echo "==> Done. Open a new shell, then:  cd ~/firstmate && claude   (or:  firstmate)"
+say "Done. Open a new shell, then: cd ~/firstmate && claude   (or: firstmate)"
