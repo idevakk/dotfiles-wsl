@@ -131,8 +131,10 @@ alias cc='"'"'claude'"'"'
 # scoped to the crew home, so everyday `cc` stays guarded.
 fm() { cd "$HOME/firstmate" && claude --dangerously-skip-permissions "$@"; }
 alias firstmate='"'"'cd ~/firstmate && claude'"'"'
-alias fm-peek='"'"'bash ~/dotfiles-wsl/fm-peek.sh'"'"'
-alias fm-watch='"'"'bash ~/dotfiles-wsl/fm-watch.sh'"'"'
+alias fm-peek='"'"'bash ~/.dotfiles-wsl/fm-peek.sh'"'"'
+alias fm-watch='"'"'bash ~/.dotfiles-wsl/fm-watch.sh'"'"'
+# pull latest dotfiles from GitHub and re-apply
+fm-update() { cd ~/.dotfiles-wsl && git pull --ff-only && ./bootstrap.sh; }
 export PATH="$HOME/.local/bin:$PATH"
 # ---- end dotfiles-wsl ----'
 
