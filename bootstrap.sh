@@ -22,6 +22,11 @@ ok()   { printf '    ok: %s\n' "$*"; }
 skip() { printf '    skip: %s\n' "$*"; }
 need() { printf '    MISSING: %s\n' "$*"; }
 
+# Network-safe download: bounded time, max size, silent progress, fails fast.
+net_get() {
+  curl -fsSL --connect-timeout 10 --max-time 120 --max-filesize 500000000 -o "$1" "$2" 2>/dev/null
+}
+
 ###############################################################################
 say "Step 0: link this repo"
 ###############################################################################
@@ -60,23 +65,24 @@ say "Step 2: user-space tools (no sudo)"
 if command -v jq >/dev/null 2>&1; then ok "jq $($BIN_DIR/jq --version 2>/dev/null || jq --version)"
 else
   say "installing jq (static)"
-  JQ_VER=1.7.1
-  curl -fsSL "https://github.com/jqlang/jq/releases/download/jq-${JQ_VER}/jq-linux-amd64" -o "$BIN_DIR/jq.tmp"
-  chmod +x "$BIN_DIR/jq.tmp" && mv "$BIN_DIR/jq.tmp" "$BIN_DIR/jq"
-  ok "jq $("$BIN_DIR/jq" --version)"
+  if net_get "$BIN_DIR/jq.tmp" "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64"; then
+    chmod +x "$BIN_DIR/jq.tmp" && mv "$BIN_DIR/jq.tmp" "$BIN_DIR/jq"
+    ok "jq $("$BIN_DIR/jq" --version)"
+  else skip "jq download failed (network); retry later or install manually"
+  fi
 fi
 
 # Neovim - official linux-x64 tarball, user-space
 if command -v nvim >/dev/null 2>&1; then ok "nvim $(nvim --version | head -1)"
 else
   say "installing neovim (official tarball)"
-  NV=0.10.4
-  curl -fsSL "https://github.com/neovim/neovim/releases/download/v${NV}/nvim-linux-x86_64.tar.gz" -o "$BIN_DIR/nvim.tar.gz"
-  tar -xzf "$BIN_DIR/nvim.tar.gz" -C "$BIN_DIR"
-  rm -f "$BIN_DIR/nvim.tar.gz"
-  # expose nvim on PATH via a symlink inside ~/.local/bin
-  ln -sf "$BIN_DIR/nvim-linux-x86_64/bin/nvim" "$BIN_DIR/nvim"
-  ok "nvim version $NV -> $BIN_DIR/nvim"
+  if net_get "$BIN_DIR/nvim.tar.gz" "https://github.com/neovim/neovim/releases/download/v0.10.4/nvim-linux-x86_64.tar.gz"; then
+    tar -xzf "$BIN_DIR/nvim.tar.gz" -C "$BIN_DIR"
+    rm -f "$BIN_DIR/nvim.tar.gz"
+    ln -sf "$BIN_DIR/nvim-linux-x86_64/bin/nvim" "$BIN_DIR/nvim"
+    ok "nvim version 0.10.4 -> $BIN_DIR/nvim"
+  else skip "neovim download failed (network); retry later or install manually"
+  fi
 fi
 
 ###############################################################################
@@ -114,22 +120,32 @@ for name in claude codex pi opencode; do
 done
 
 ###############################################################################
-say "Step 5: shell helpers"
+say "Step 5: shell helpers (idempotent)"
 ###############################################################################
 SHELLRC="$HOME/.bashrc"
-cat >> "$SHELLRC" <<'EOS'
-
+BLOCK='
 # ---- dotfiles-wsl (kunchenguid-style aliases, adapted) ----
-alias cc='claude'
-# high-agency, opt-in: alias cc='claude --dangerously-skip-permissions'
-alias firstmate='cd ~/firstmate && claude'
-alias fm-peek='bash ~/dotfiles-wsl/fm-peek.sh'
-alias fm-watch='bash ~/dotfiles-wsl/fm-watch.sh'
+# everyday Claude: SAFE (normal permission prompts)
+alias cc='"'"'claude'"'"'
+# FIRSTMATE-ONLY high-agency launcher: claude --dangerously-skip-permissions
+# scoped to the crew home, so everyday `cc` stays guarded.
+fm() { cd "$HOME/firstmate" && claude --dangerously-skip-permissions "$@"; }
+alias firstmate='"'"'cd ~/firstmate && claude'"'"'
+alias fm-peek='"'"'bash ~/dotfiles-wsl/fm-peek.sh'"'"'
+alias fm-watch='"'"'bash ~/dotfiles-wsl/fm-watch.sh'"'"'
 export PATH="$HOME/.local/bin:$PATH"
-# ---- end dotfiles-wsl ----
-EOS
-grep -q 'HOME/.local/bin' "$SHELLRC" || printf '\n# dotfiles-wsl: gh etc\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$SHELLRC"
-ok "aliases + PATH in $SHELLRC"
+# ---- end dotfiles-wsl ----'
+
+if grep -q "# ---- end dotfiles-wsl ----" "$SHELLRC"; then
+  # remove any existing blocks, then re-add a single clean one
+  awk '/# ---- dotfiles-wsl \(kunchenguid-style aliases, adapted\) ----/{skip=1} !skip{print} /# ---- end dotfiles-wsl ----/{skip=0}' "$SHELLRC" > "$SHELLRC.tmp" \
+    && mv "$SHELLRC.tmp" "$SHELLRC"
+fi
+printf '%s\n' "$BLOCK" >> "$SHELLRC"
+if ! grep -q 'HOME/.local/bin' "$SHELLRC"; then
+  printf '\n# dotfiles-wsl: gh etc\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$SHELLRC"
+fi
+ok "aliases + PATH in $SHELLRC (single block)"
 
 ###############################################################################
 say "Step 6: verify"

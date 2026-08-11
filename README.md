@@ -84,8 +84,25 @@ The firstmate crew lives in `~/firstmate`. `bootstrap.sh` checks it and the
 cd ~/firstmate && claude   # or:  firstmate
 ```
 
+## The two entry points (scoped high-agency)
+
+The author's `cc`/`co` are high-agency (`claude --dangerously-skip-permissions`,
+`codex --full-auto`). Here they are **deliberately scoped**:
+
+- **`cc`** = safe everyday Claude (`claude`), normal permission prompts.
+- **`fm`** = **FirstMate-only** high-agency launcher:
+  ```bash
+  fm() { cd "$HOME/firstmate" && claude --dangerously-skip-permissions "$@"; }
+  ```
+  It `cd`s into the crew home and passes `--dangerously-skip-permissions`, so the
+  autonomous FirstMate crew gets the convenience while your everyday `cc` stays guarded.
+- `firstmate` = same as `fm` but without the flag (safe crew launch).
+
+**Safety note:** `--dangerously-skip-permissions` is a session flag, not scoped by
+directory. `fm` is a deliberate choice to run it inside `~/firstmate`; only use it
+for crew work.
+
 ## Notes
 
 - `home/AGENTS.md` is the global agent policy. Edit it to match *your* rules.
-- The `cc` alias is deliberately the safe `claude`, not `--dangerously-skip-permissions`.
 - This is WSL/Ubuntu: no nix-darwin, no homebrew, no macOS paths.
