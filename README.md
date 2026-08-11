@@ -31,6 +31,15 @@ cd ~/dotfiles-wsl
 
 That's it. Re-run it after editing config to re-apply (idempotent).
 
+**Keeping it up to date** - pull the latest dotfiles and re-apply them in one command:
+
+```sh
+fm-update    # = cd ~/.dotfiles-wsl && git pull --ff-only && ./bootstrap.sh
+```
+
+`~/.dotfiles-wsl` is the symlink to this repo, so `git pull` runs on the real clone
+wherever it lives, then `bootstrap.sh` re-wires the configs and tools.
+
 ## What bootstrap.sh installs & configures
 
 | Component | What happens |
@@ -42,7 +51,7 @@ That's it. Re-run it after editing config to re-apply (idempotent).
 | herdr | firstmate's **pinned, checksum-verified** installer -> `~/.local/bin/herdr` |
 | treehouse | firstmate's pinned installer (task worktrees) |
 | agents | auto-detect `claude`, `codex`, `pi`, `opencode`; **skip clean if absent** |
-| shell | aliases `cc`/`firstmate`/`fm-peek`/`fm-watch` + `~/.local/bin` on PATH |
+| shell | aliases `cc`/`fm`/`fm-update`/`fm-peek`/`fm-watch`/`firstmate` + `~/.local/bin` on PATH |
 | verify | reports every tool/agent/firstmate status |
 
 **User-space only - no sudo required.**
