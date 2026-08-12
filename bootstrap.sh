@@ -142,9 +142,11 @@ if command -v pi >/dev/null 2>&1; then
     ok "@narumitw/pi-retry already installed"
   else
     say "installing @narumitw/pi-retry (stall watchdog retry)"
-    PI_RETRY_STALL_TIMEOUT_MS=30000 "$PI_CMD" install npm:@narumitw/pi-retry 2>/dev/null \
-      && ok "@narumitw/pi-retry installed" \
-      || need "@narumitw/pi-retry install failed (pi CLI or network issue)"
+    if PI_RETRY_STALL_TIMEOUT_MS=30000 "$PI_CMD" install npm:@narumitw/pi-retry 2>/dev/null; then
+      ok "@narumitw/pi-retry installed"
+    else
+      need "@narumitw/pi-retry install failed (pi CLI or network issue)"
+    fi
   fi
 
   # @monotykamary/pi-retry
@@ -152,12 +154,16 @@ if command -v pi >/dev/null 2>&1; then
     ok "@monotykamary/pi-retry already installed"
   else
     say "installing @monotykamary/pi-retry (catch-all backoff retry)"
-    "$PI_CMD" install npm:@monotykamary/pi-retry 2>/dev/null \
-      && ok "@monotykamary/pi-retry installed" \
-      || need "@monotykamary/pi-retry install failed (pi CLI or network issue)"
+    if "$PI_CMD" install npm:@monotykamary/pi-retry 2>/dev/null; then
+      ok "@monotykamary/pi-retry installed"
+    else
+      need "@monotykamary/pi-retry install failed (pi CLI or network issue)"
+    fi
   fi
 else
-  skip "pi CLI not found — pi-retry extensions not installed (run manually: pi install npm:@narumitw/pi-retry npm:@monotykamary/pi-retry)"
+  skip "pi CLI not found — pi-retry extensions not installed"
+  skip "  install manually: pi install npm:@narumitw/pi-retry"
+  skip "  install manually: pi install npm:@monotykamary/pi-retry"
 fi
 
 ###############################################################################
