@@ -1,6 +1,6 @@
 # global agent instructions
 
-- Never use the em dash "—". Use plain dash "-" instead
+- Never use the em dash. Use plain dash "-" instead
 - When writing commit messages, NEVER auto-add your agent name as co-author
 - Never manually modify CHANGELOG.md files or any files that are marked as auto-generated
 - When making technical decisions, do not give much weight to development cost.
@@ -13,3 +13,9 @@
 - Apply that same high standard to engineering excellence: lint, test failures, and test flakiness.
   If you see one, even if it is not caused by what you are working on right now, still get it fixed.
 - Before using "dynamic workflows", "ultra code" or any harness feature that immediately spawns a large swarm of subagents, always explain the tradeoffs and ask the user for explicit approval.
+- When a pull request has review comments (from any reviewer or automated review tool such as CodeRabbit, GitHub Copilot code review, or any commit comment on the PR), always find and fix every actionable comment before asking the user to review the PR. Only surface comments you deliberately decided not to act on.
+
+- This machine is Windows + WSL2 Ubuntu. Do NOT propose installing Nix/home-manager or
+  macOS-only tooling (nix-darwin, homebrew, wezterm-mac paths) here.
+- `sysres` is a lightweight agent diagnostic tool for checking system resources.
+  To learn its uses, run `sysres --help`.

@@ -50,6 +50,7 @@ wherever it lives, then `bootstrap.sh` re-wires the configs and tools.
 | Neovim | official linux-x64 tarball -> `~/.local/bin/nvim` |
 | herdr | firstmate's **pinned, checksum-verified** installer -> `~/.local/bin/herdr` |
 | treehouse | firstmate's pinned installer (task worktrees) |
+| sysres | agent-agnostic resource check (reads /proc, green/amber/red verdict) -> `~/.local/bin/sysres` |
 | agents | auto-detect `claude`, `codex`, `pi`, `opencode`; **skip clean if absent** |
 | shell | aliases `cc`/`fm`/`fm-pi`/`fm-update`/`fm-peek`/`fm-watch`/`firstmate` + `~/.local/bin` on PATH |
 | verify | reports every tool/agent/firstmate status |

@@ -51,6 +51,7 @@ link "$HOME/.config/opencode/AGENTS.md"   "$LINK/$rel/AGENTS.md"
 link "$HOME/.config/nvim"                 "$LINK/$rel/.config/nvim"
 link "$HOME/.config/wezterm"              "$LINK/$rel/.config/wezterm"
 link "$HOME/.config/herdr"                "$LINK/$rel/.config/herdr"
+link "$HOME/.local/bin/sysres"            "$LINK/$rel/.local/bin/sysres"
 # pi agent - themes + extensions edit-in-place from repo.
 # settings.json + models.json intentionally NOT linked: Pi-managed and hold
 # provider API keys; bootstrap only merges aesthetic keys into a live settings.
