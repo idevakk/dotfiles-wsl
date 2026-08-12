@@ -140,6 +140,63 @@ for name in claude codex pi opencode; do
 done
 
 ###############################################################################
+say "Step 4a: WSL npm IPv6 fix (Happy Eyeballs workaround)"
+###############################################################################
+# Node ≥20 defaults autoSelectFamily=true ("Happy Eyeballs"), which tries
+# IPv6 first. Under WSL's NAT DNS, AAAA records resolve but IPv6 routes
+# are unreachable, so npm hangs on connect and eventually ETIMEDOUT.
+# Fix: preload wsl-npm-asf-fix.js (sets autoSelectFamily=false) via a
+# wrapper script, and tell pi to use that wrapper via `npmCommand`.
+# This block is a no-op on non-WSL systems.
+if grep -qiE '(microsoft|wsl)' /proc/version 2>/dev/null; then
+  say "WSL detected — installing npm IPv6 workaround"
+
+  # Install the wrapper script to ~/.local/bin
+  WSL_NPM_WRAPPER="$BIN_DIR/wsl-npm-wrapper.sh"
+  cp "$REPO_DIR/wsl-npm-wrapper.sh" "$WSL_NPM_WRAPPER"
+  chmod +x "$WSL_NPM_WRAPPER"
+  ok "wsl-npm-wrapper.sh -> $WSL_NPM_WRAPPER"
+
+  # Verify the preload script is reachable via the repo symlink
+  if [ -f "$LINK/wsl-npm-asf-fix.js" ]; then
+    ok "wsl-npm-asf-fix.js reachable at $LINK/wsl-npm-asf-fix.js"
+  else
+    need "wsl-npm-asf-fix.js not found at $LINK/ (wrapper will fail)"
+  fi
+
+  # Inject npmCommand into pi's settings.json (only if pi is installed)
+  if command -v pi >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    PI_SETTINGS="$HOME/.pi/agent/settings.json"
+    mkdir -p "$(dirname "$PI_SETTINGS")"
+    if [ -f "$PI_SETTINGS" ]; then
+      # Only inject if npmCommand is not already set
+      if jq -e '.npmCommand' "$PI_SETTINGS" >/dev/null 2>&1; then
+        ok "npmCommand already set in pi settings.json (left as-is)"
+      else
+        jq --arg wrapper "$WSL_NPM_WRAPPER" \
+           '. + {"npmCommand": [$wrapper]}' \
+           "$PI_SETTINGS" > "$PI_SETTINGS.tmp" \
+          && mv "$PI_SETTINGS.tmp" "$PI_SETTINGS" \
+          && ok "npmCommand injected into pi settings.json" \
+          || need "failed to merge npmCommand into pi settings.json"
+      fi
+    else
+      # No existing settings — create minimal file with npmCommand
+      printf '{"npmCommand":["%s"]}\n' "$WSL_NPM_WRAPPER" > "$PI_SETTINGS"
+      ok "created pi settings.json with npmCommand"
+    fi
+  else
+    if ! command -v pi >/dev/null 2>&1; then
+      skip "pi not installed — npmCommand not injected (will be set on next run)"
+    elif ! command -v jq >/dev/null 2>&1; then
+      skip "jq not available — npmCommand not injected (install jq and re-run)"
+    fi
+  fi
+else
+  skip "not WSL — IPv6 workaround not needed"
+fi
+
+###############################################################################
 say "Step 4b: pi-retry extensions (auto-install via pi CLI)"
 ###############################################################################
 # @narumitw/pi-retry — watchdog-based stall retry.
