@@ -41,6 +41,7 @@ That's it. Re-run it after editing config to re-apply (idempotent).
 | Neovim | official linux-x64 tarball -> `~/.local/bin/nvim` |
 | herdr | firstmate's **pinned, checksum-verified** installer -> `~/.local/bin/herdr` |
 | treehouse | firstmate's pinned installer (task worktrees) |
+| sysres | agent-agnostic resource check (reads /proc, green/amber/red verdict) -> `~/.local/bin/sysres` |
 | agents | auto-detect `claude`, `codex`, `pi`, `opencode`; **skip clean if absent** |
 | shell | aliases `cc`/`firstmate`/`fm-peek`/`fm-watch` + `~/.local/bin` on PATH |
 | verify | reports every tool/agent/firstmate status |

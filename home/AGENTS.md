@@ -35,3 +35,22 @@ Mirrors kunchenguid/dotfiles' edit-in-place model, adapted for WSL/Ubuntu.
 - State is restart-proof: killing the session is fine, the next launch reconciles.
 - This machine is Windows + WSL2 Ubuntu. Do NOT propose installing Nix/home-manager or
   macOS-only tooling (nix-darwin, homebrew, wezterm-mac paths) here.
+
+## System resources (sysres)
+
+`sysres` is a lightweight, agent-agnostic resource check on PATH (`~/.local/bin/sysres`),
+available to this agent via the bash tool. It reads `/proc`/`/sys`, reports
+memory / CPU load / disk / open FDs, and emits a `VERDICT: green|amber|red` plus a
+machine-checkable exit code (`0` green, `1` amber, `2` red). Run `sysres -h` for
+usage, `sysres -j` for JSON, `sysres -q` for one line.
+
+- Run `sysres` BEFORE launching any heavy or parallel work: launching a batch of
+  Docker containers or `docker compose up` of many services, running multiple
+  builds at once, large test matrices, model training, or several dev servers at once.
+- Interpret the verdict: `green` (exit 0) = go ahead. `amber` (exit 1) = proceed
+  with caution, prefer running tasks one at a time. `red` (exit 2) = do NOT launch
+  heavy work now; wait, sequence, or reduce concurrency first.
+- Treat `exit 255` (all values unknown) as "cannot tell" - do not assume the system
+  is safe; retry once or proceed cautiously.
+- Do NOT run `sysres` for normal trivial commands, or to second-guess every single
+  command. It exists for heavy or many-concurrent tasks, not per-command gating.

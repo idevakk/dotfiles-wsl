@@ -51,6 +51,7 @@ link "$HOME/.config/opencode/AGENTS.md"   "$LINK/$rel/AGENTS.md"
 link "$HOME/.config/nvim"                 "$LINK/$rel/.config/nvim"
 link "$HOME/.config/wezterm"              "$LINK/$rel/.config/wezterm"
 link "$HOME/.config/herdr"                "$LINK/$rel/.config/herdr"
+link "$HOME/.local/bin/sysres"            "$LINK/$rel/.local/bin/sysres"
 # claude settings.json - MERGED (preserve live hooks/keys)
 if [ -e "$HOME/.claude/settings.json" ] && [ ! -L "$HOME/.claude/settings.json" ]; then
   ok "claude settings.json already live (left untouched; see home/ for reference)"
