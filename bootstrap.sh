@@ -51,6 +51,25 @@ link "$HOME/.config/opencode/AGENTS.md"   "$LINK/$rel/AGENTS.md"
 link "$HOME/.config/nvim"                 "$LINK/$rel/.config/nvim"
 link "$HOME/.config/wezterm"              "$LINK/$rel/.config/wezterm"
 link "$HOME/.config/herdr"                "$LINK/$rel/.config/herdr"
+# pi agent - themes + extensions edit-in-place from repo.
+# settings.json + models.json intentionally NOT linked: Pi-managed and hold
+# provider API keys; bootstrap only merges aesthetic keys into a live settings.
+link "$HOME/.pi/agent/themes"             "$LINK/$rel/.pi/agent/themes"
+link "$HOME/.pi/agent/extensions"         "$LINK/$rel/.pi/agent/extensions"
+# pi settings.json - merge repo's aesthetic keys into the live file (keep provider/model).
+if [ -e "$HOME/.pi/agent/settings.json" ]; then
+  mkdir -p "$HOME/.pi/agent"
+  if command -v jq >/dev/null 2>&1; then
+    jq -s '.[1] * .[0]' "$HOME/.pi/agent/settings.json" "$LINK/$rel/.pi/agent/settings.json" > "$HOME/.pi/agent/settings.json.tmp" \
+      && mv "$HOME/.pi/agent/settings.json.tmp" "$HOME/.pi/agent/settings.json" \
+      && ok "pi settings.json merged (repo aesthetic keys preserved live provider)" \
+      || skip "pi settings merge failed (jq)"
+  else
+    skip "jq missing - pi settings merge skipped"
+  fi
+else
+  link "$HOME/.pi/agent/settings.json" "$LINK/$rel/.pi/agent/settings.json"
+fi
 # claude settings.json - MERGED (preserve live hooks/keys)
 if [ -e "$HOME/.claude/settings.json" ] && [ ! -L "$HOME/.claude/settings.json" ]; then
   ok "claude settings.json already live (left untouched; see home/ for reference)"
