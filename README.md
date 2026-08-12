@@ -51,7 +51,7 @@ wherever it lives, then `bootstrap.sh` re-wires the configs and tools.
 | herdr | firstmate's **pinned, checksum-verified** installer -> `~/.local/bin/herdr` |
 | treehouse | firstmate's pinned installer (task worktrees) |
 | agents | auto-detect `claude`, `codex`, `pi`, `opencode`; **skip clean if absent** |
-| shell | aliases `cc`/`fm`/`fm-update`/`fm-peek`/`fm-watch`/`firstmate` + `~/.local/bin` on PATH |
+| shell | aliases `cc`/`fm`/`fm-pi`/`fm-update`/`fm-peek`/`fm-watch`/`firstmate` + `~/.local/bin` on PATH |
 | verify | reports every tool/agent/firstmate status |
 
 **User-space only - no sudo required.**
@@ -105,11 +105,17 @@ The author's `cc`/`co` are high-agency (`claude --dangerously-skip-permissions`,
   ```
   It `cd`s into the crew home and passes `--dangerously-skip-permissions`, so the
   autonomous FirstMate crew gets the convenience while your everyday `cc` stays guarded.
+- `fm-pi` = **Pi-agent** crew launcher:
+  ```bash
+  fm-pi() { cd "$HOME/firstmate" && pi --approve "$@"; }
+  ```
+  `--approve` trusts project-local files for the run (narrower than Claude's full
+  permission bypass). Everyday `pi` stays guarded; only this crew entry passes `--approve`.
 - `firstmate` = same as `fm` but without the flag (safe crew launch).
 
 **Safety note:** `--dangerously-skip-permissions` is a session flag, not scoped by
 directory. `fm` is a deliberate choice to run it inside `~/firstmate`; only use it
-for crew work.
+for crew work. `fm-pi`'s `--approve` only trusts project-local files, not a full bypass.
 
 ## Notes
 

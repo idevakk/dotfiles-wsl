@@ -149,6 +149,9 @@ alias cc='"'"'claude'"'"'
 # FIRSTMATE-ONLY high-agency launcher: claude --dangerously-skip-permissions
 # scoped to the crew home, so everyday `cc` stays guarded.
 fm() { cd "$HOME/firstmate" && claude --dangerously-skip-permissions "$@"; }
+# FIRSTMATE with the Pi agent: pi --approve (trusts project-local files).
+# Scope: --approve only trusts project-local files, NOT full permission bypass.
+fm-pi() { cd "$HOME/firstmate" && pi --approve "$@"; }
 alias firstmate='"'"'cd ~/firstmate && claude'"'"'
 alias fm-peek='"'"'bash ~/.dotfiles-wsl/fm-peek.sh'"'"'
 alias fm-watch='"'"'bash ~/.dotfiles-wsl/fm-watch.sh'"'"'
