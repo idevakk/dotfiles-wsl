@@ -142,6 +142,24 @@ done
 say "Step 5: shell helpers (idempotent)"
 ###############################################################################
 SHELLRC="$HOME/.bashrc"
+# Decide whether to export FM_BACKEND=herdr (only if herdr installed).
+FM_BACKEND_EXPORT=''
+if [ -x "$BIN_DIR/herdr" ]; then
+  # also confirm the firstmate backend config + config file exist
+  if [ -f "$FIRSTMATE_DIR/config/backend" ] && [ -s "$HOME/.config/herdr/config.toml" ]; then
+    FM_BACKEND_EXPORT='export FM_BACKEND=herdr  # use herdr backend (tmux default otherwise)'
+    ok "herdr present -> will export FM_BACKEND=herdr"
+  else
+    skip "herdr installed but backend config absent (leaving default tmux)"
+  fi
+else
+  ok "no herdr installed (backend default: tmux)"
+fi
+# Build the bashrc block; inject FM_BACKEND export only when applicable.
+FM_BACKEND_LINE=''
+if [ -n "$FM_BACKEND_EXPORT" ]; then
+  FM_BACKEND_LINE="$FM_BACKEND_EXPORT"
+fi
 BLOCK='
 # ---- dotfiles-wsl (kunchenguid-style aliases, adapted) ----
 # everyday Claude: SAFE (normal permission prompts)
@@ -158,6 +176,7 @@ alias fm-watch='"'"'bash ~/.dotfiles-wsl/fm-watch.sh'"'"'
 # pull latest dotfiles from GitHub and re-apply
 fm-update() { cd ~/.dotfiles-wsl && git pull --ff-only && ./bootstrap.sh; }
 export PATH="$HOME/.local/bin:$PATH"
+'"$FM_BACKEND_LINE"'
 # ---- end dotfiles-wsl ----'
 
 if grep -q "# ---- end dotfiles-wsl ----" "$SHELLRC"; then
