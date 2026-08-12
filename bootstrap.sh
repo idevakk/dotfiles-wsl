@@ -52,6 +52,25 @@ link "$HOME/.config/nvim"                 "$LINK/$rel/.config/nvim"
 link "$HOME/.config/wezterm"              "$LINK/$rel/.config/wezterm"
 link "$HOME/.config/herdr"                "$LINK/$rel/.config/herdr"
 link "$HOME/.local/bin/sysres"            "$LINK/$rel/.local/bin/sysres"
+# pi agent - themes + extensions edit-in-place from repo.
+# settings.json + models.json intentionally NOT linked: Pi-managed and hold
+# provider API keys; bootstrap only merges aesthetic keys into a live settings.
+link "$HOME/.pi/agent/themes"             "$LINK/$rel/.pi/agent/themes"
+link "$HOME/.pi/agent/extensions"         "$LINK/$rel/.pi/agent/extensions"
+# pi settings.json - merge repo's aesthetic keys into the live file (keep provider/model).
+if [ -e "$HOME/.pi/agent/settings.json" ]; then
+  mkdir -p "$HOME/.pi/agent"
+  if command -v jq >/dev/null 2>&1; then
+    jq -s '.[1] * .[0]' "$HOME/.pi/agent/settings.json" "$LINK/$rel/.pi/agent/settings.json" > "$HOME/.pi/agent/settings.json.tmp" \
+      && mv "$HOME/.pi/agent/settings.json.tmp" "$HOME/.pi/agent/settings.json" \
+      && ok "pi settings.json merged (repo aesthetic keys preserved live provider)" \
+      || skip "pi settings merge failed (jq)"
+  else
+    skip "jq missing - pi settings merge skipped"
+  fi
+else
+  link "$HOME/.pi/agent/settings.json" "$LINK/$rel/.pi/agent/settings.json"
+fi
 # claude settings.json - MERGED (preserve live hooks/keys)
 if [ -e "$HOME/.claude/settings.json" ] && [ ! -L "$HOME/.claude/settings.json" ]; then
   ok "claude settings.json already live (left untouched; see home/ for reference)"
@@ -121,9 +140,84 @@ for name in claude codex pi opencode; do
 done
 
 ###############################################################################
+say "Step 4b: pi-retry extensions (auto-install via pi CLI)"
+###############################################################################
+# @narumitw/pi-retry — watchdog-based stall retry.
+#   Detects provider errors (stopReason:"error"), Codex backend errors, and
+#   websocket connection limits. Uses a stall watchdog (default ~90s timeout,
+#   configurable via --retry-stall-timeout-ms or PI_RETRY_STALL_TIMEOUT_MS).
+#   Relies on Pi's built-in retry policy; warns if disabled. No deps.
+# @monotykamary/pi-retry — catch-all exponential backoff retry.
+#   Retries everything by default (blacklist: bad API key, model not found,
+#   unsupported model). Backoff 2s→4s→8s…→60s cap. Built-in slash commands:
+#   /retry, /retry status, /retry reset. No deps.
+#
+# Both are installed as Pi extensions via:  pi install npm:@scope/pi-retry
+# Versions are pinned (npm:@scope/pi-retry@<version>) to prevent unreviewed code
+# from being auto-installed on subsequent bootstrap runs — extensions execute
+# with full system access. Update versions deliberately via Step 6 / pi update.
+# Latest pinned versions as of this bootstrap:
+#   @narumitw/pi-retry      0.31.0
+#   @monotykamary/pi-retry  0.6.9
+NARUMITW_PI_RETRY_VER="0.31.0"
+MONOTYKAMARY_PI_RETRY_VER="0.6.9"
+# The `pi` CLI is expected at /usr/local/bin/pi or $HOME/.local/bin/pi.
+if command -v pi >/dev/null 2>&1; then
+  PI_CMD="$(command -v pi)"
+
+  # @narumitw/pi-retry
+  # Stall watchdog timeout is persisted via the shell helpers block (Step 5)
+  # so it applies to all later `pi` sessions, not just this install process.
+  if "$PI_CMD" list 2>/dev/null | grep -q "npm:@narumitw/pi-retry@${NARUMITW_PI_RETRY_VER}"; then
+    ok "@narumitw/pi-retry already installed ($NARUMITW_PI_RETRY_VER)"
+  else
+    say "installing @narumitw/pi-retry v${NARUMITW_PI_RETRY_VER} (stall watchdog retry)"
+    if "$PI_CMD" install "npm:@narumitw/pi-retry@${NARUMITW_PI_RETRY_VER}" 2>/dev/null; then
+      ok "@narumitw/pi-retry installed"
+    else
+      need "@narumitw/pi-retry install failed (pi CLI or network issue)"
+    fi
+  fi
+
+  # @monotykamary/pi-retry
+  if "$PI_CMD" list 2>/dev/null | grep -q "npm:@monotykamary/pi-retry@${MONOTYKAMARY_PI_RETRY_VER}"; then
+    ok "@monotykamary/pi-retry already installed ($MONOTYKAMARY_PI_RETRY_VER)"
+  else
+    say "installing @monotykamary/pi-retry v${MONOTYKAMARY_PI_RETRY_VER} (catch-all backoff retry)"
+    if "$PI_CMD" install "npm:@monotykamary/pi-retry@${MONOTYKAMARY_PI_RETRY_VER}" 2>/dev/null; then
+      ok "@monotykamary/pi-retry installed"
+    else
+      need "@monotykamary/pi-retry install failed (pi CLI or network issue)"
+    fi
+  fi
+else
+  skip "pi CLI not found — pi-retry extensions not installed"
+  skip "  install manually: pi install npm:@narumitw/pi-retry@${NARUMITW_PI_RETRY_VER}"
+  skip "  install manually: pi install npm:@monotykamary/pi-retry@${MONOTYKAMARY_PI_RETRY_VER}"
+fi
+
+###############################################################################
 say "Step 5: shell helpers (idempotent)"
 ###############################################################################
 SHELLRC="$HOME/.bashrc"
+# Decide whether to export FM_BACKEND=herdr (only if herdr installed).
+FM_BACKEND_EXPORT=''
+if [ -x "$BIN_DIR/herdr" ]; then
+  # also confirm the firstmate backend config + config file exist
+  if [ -f "$FIRSTMATE_DIR/config/backend" ] && [ -s "$HOME/.config/herdr/config.toml" ]; then
+    FM_BACKEND_EXPORT='export FM_BACKEND=herdr  # use herdr backend (tmux default otherwise)'
+    ok "herdr present -> will export FM_BACKEND=herdr"
+  else
+    skip "herdr installed but backend config absent (leaving default tmux)"
+  fi
+else
+  ok "no herdr installed (backend default: tmux)"
+fi
+# Build the bashrc block; inject FM_BACKEND export only when applicable.
+FM_BACKEND_LINE=''
+if [ -n "$FM_BACKEND_EXPORT" ]; then
+  FM_BACKEND_LINE="$FM_BACKEND_EXPORT"
+fi
 BLOCK='
 # ---- dotfiles-wsl (kunchenguid-style aliases, adapted) ----
 # everyday Claude: SAFE (normal permission prompts)
@@ -131,12 +225,19 @@ alias cc='"'"'claude'"'"'
 # FIRSTMATE-ONLY high-agency launcher: claude --dangerously-skip-permissions
 # scoped to the crew home, so everyday `cc` stays guarded.
 fm() { cd "$HOME/firstmate" && claude --dangerously-skip-permissions "$@"; }
+# FIRSTMATE with the Pi agent: pi --approve (trusts project-local files).
+# Scope: --approve only trusts project-local files, NOT full permission bypass.
+fm-pi() { cd "$HOME/firstmate" && pi --approve "$@"; }
 alias firstmate='"'"'cd ~/firstmate && claude'"'"'
 alias fm-peek='"'"'bash ~/.dotfiles-wsl/fm-peek.sh'"'"'
 alias fm-watch='"'"'bash ~/.dotfiles-wsl/fm-watch.sh'"'"'
 # pull latest dotfiles from GitHub and re-apply
 fm-update() { cd ~/.dotfiles-wsl && git pull --ff-only && ./bootstrap.sh; }
+# pi-retry: stall watchdog timeout (seconds) for @narumitw/pi-retry.
+# Persisted here so it applies to all future pi sessions, not just install.
+export PI_RETRY_STALL_TIMEOUT_MS=30000
 export PATH="$HOME/.local/bin:$PATH"
+'"$FM_BACKEND_LINE"'
 # ---- end dotfiles-wsl ----'
 
 if grep -q "# ---- end dotfiles-wsl ----" "$SHELLRC"; then
@@ -161,6 +262,15 @@ echo "--- agents ---"
 for t in claude codex pi opencode; do
   if command -v "$t" >/dev/null 2>&1; then echo "   [ok] $t"; else echo "   [--] $t (not installed)"; fi
 done
+echo "--- pi extensions ---"
+if command -v pi >/dev/null 2>&1; then
+  for pkg in "npm:@narumitw/pi-retry" "npm:@monotykamary/pi-retry"; do
+    if pi list 2>/dev/null | grep -q "$pkg"; then echo "   [ok] $pkg";
+    else echo "   [--] $pkg (not installed)"; fi
+  done
+else
+  echo "   [--] pi CLI not found (extensions not installed)"
+fi
 echo "--- firstmate ---"
 if [ -d "$FIRSTMATE_DIR" ]; then echo "   [ok] firstmate @ $(git -C "$FIRSTMATE_DIR" rev-parse --short HEAD 2>/dev/null || echo ?)";
   [ -f "$FIRSTMATE_DIR/config/backend" ] && echo "         backend=$(cat "$FIRSTMATE_DIR/config/backend")" || echo "         backend=tmux (default)"; fi
