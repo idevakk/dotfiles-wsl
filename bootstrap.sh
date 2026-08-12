@@ -138,7 +138,7 @@ if command -v pi >/dev/null 2>&1; then
   PI_CMD="$(command -v pi)"
 
   # @narumitw/pi-retry
-  if "$PI_CMD" list-extensions 2>/dev/null | grep -q 'narumitw/pi-retry'; then
+  if "$PI_CMD" list 2>/dev/null | grep -q 'npm:@narumitw/pi-retry'; then
     ok "@narumitw/pi-retry already installed"
   else
     say "installing @narumitw/pi-retry (stall watchdog retry)"
@@ -150,7 +150,7 @@ if command -v pi >/dev/null 2>&1; then
   fi
 
   # @monotykamary/pi-retry
-  if "$PI_CMD" list-extensions 2>/dev/null | grep -q 'monotykamary/pi-retry'; then
+  if "$PI_CMD" list 2>/dev/null | grep -q 'npm:@monotykamary/pi-retry'; then
     ok "@monotykamary/pi-retry already installed"
   else
     say "installing @monotykamary/pi-retry (catch-all backoff retry)"
@@ -209,9 +209,9 @@ for t in claude codex pi opencode; do
 done
 echo "--- pi extensions ---"
 if command -v pi >/dev/null 2>&1; then
-  for ext in narumitw/pi-retry monotykamary/pi-retry; do
-    if pi list-extensions 2>/dev/null | grep -q "$ext"; then echo "   [ok] $ext";
-    else echo "   [--] $ext (not installed)"; fi
+  for pkg in "npm:@narumitw/pi-retry" "npm:@monotykamary/pi-retry"; do
+    if pi list 2>/dev/null | grep -q "$pkg"; then echo "   [ok] $pkg";
+    else echo "   [--] $pkg (not installed)"; fi
   done
 else
   echo "   [--] pi CLI not found (extensions not installed)"
