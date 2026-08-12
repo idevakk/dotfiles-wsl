@@ -120,6 +120,47 @@ for name in claude codex pi opencode; do
 done
 
 ###############################################################################
+say "Step 4b: pi-retry extensions (auto-install via pi CLI)"
+###############################################################################
+# @narumitw/pi-retry — watchdog-based stall retry.
+#   Detects provider errors (stopReason:"error"), Codex backend errors, and
+#   websocket connection limits. Uses a stall watchdog (default ~90s timeout,
+#   configurable via --retry-stall-timeout-ms or PI_RETRY_STALL_TIMEOUT_MS).
+#   Relies on Pi's built-in retry policy; warns if disabled. No deps.
+# @monotykamary/pi-retry — catch-all exponential backoff retry.
+#   Retries everything by default (blacklist: bad API key, model not found,
+#   unsupported model). Backoff 2s→4s→8s…→60s cap. Built-in slash commands:
+#   /retry, /retry status, /retry reset. No deps.
+#
+# Both are installed as Pi extensions via:  pi install npm:@scope/pi-retry
+# The `pi` CLI is expected at /usr/local/bin/pi or $HOME/.local/bin/pi.
+if command -v pi >/dev/null 2>&1; then
+  PI_CMD="$(command -v pi)"
+
+  # @narumitw/pi-retry
+  if "$PI_CMD" list-extensions 2>/dev/null | grep -q 'narumitw/pi-retry'; then
+    ok "@narumitw/pi-retry already installed"
+  else
+    say "installing @narumitw/pi-retry (stall watchdog retry)"
+    PI_RETRY_STALL_TIMEOUT_MS=30000 "$PI_CMD" install npm:@narumitw/pi-retry 2>/dev/null \
+      && ok "@narumitw/pi-retry installed" \
+      || need "@narumitw/pi-retry install failed (pi CLI or network issue)"
+  fi
+
+  # @monotykamary/pi-retry
+  if "$PI_CMD" list-extensions 2>/dev/null | grep -q 'monotykamary/pi-retry'; then
+    ok "@monotykamary/pi-retry already installed"
+  else
+    say "installing @monotykamary/pi-retry (catch-all backoff retry)"
+    "$PI_CMD" install npm:@monotykamary/pi-retry 2>/dev/null \
+      && ok "@monotykamary/pi-retry installed" \
+      || need "@monotykamary/pi-retry install failed (pi CLI or network issue)"
+  fi
+else
+  skip "pi CLI not found — pi-retry extensions not installed (run manually: pi install npm:@narumitw/pi-retry npm:@monotykamary/pi-retry)"
+fi
+
+###############################################################################
 say "Step 5: shell helpers (idempotent)"
 ###############################################################################
 SHELLRC="$HOME/.bashrc"
@@ -160,6 +201,15 @@ echo "--- agents ---"
 for t in claude codex pi opencode; do
   if command -v "$t" >/dev/null 2>&1; then echo "   [ok] $t"; else echo "   [--] $t (not installed)"; fi
 done
+echo "--- pi extensions ---"
+if command -v pi >/dev/null 2>&1; then
+  for ext in narumitw/pi-retry monotykamary/pi-retry; do
+    if pi list-extensions 2>/dev/null | grep -q "$ext"; then echo "   [ok] $ext";
+    else echo "   [--] $ext (not installed)"; fi
+  done
+else
+  echo "   [--] pi CLI not found (extensions not installed)"
+fi
 echo "--- firstmate ---"
 if [ -d "$FIRSTMATE_DIR" ]; then echo "   [ok] firstmate @ $(git -C "$FIRSTMATE_DIR" rev-parse --short HEAD 2>/dev/null || echo ?)";
   [ -f "$FIRSTMATE_DIR/config/backend" ] && echo "         backend=$(cat "$FIRSTMATE_DIR/config/backend")" || echo "         backend=tmux (default)"; fi
