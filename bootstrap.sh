@@ -139,6 +139,63 @@ for name in claude codex pi opencode; do
 done
 
 ###############################################################################
+say "Step 4b: pi-retry extensions (auto-install via pi CLI)"
+###############################################################################
+# @narumitw/pi-retry — watchdog-based stall retry.
+#   Detects provider errors (stopReason:"error"), Codex backend errors, and
+#   websocket connection limits. Uses a stall watchdog (default ~90s timeout,
+#   configurable via --retry-stall-timeout-ms or PI_RETRY_STALL_TIMEOUT_MS).
+#   Relies on Pi's built-in retry policy; warns if disabled. No deps.
+# @monotykamary/pi-retry — catch-all exponential backoff retry.
+#   Retries everything by default (blacklist: bad API key, model not found,
+#   unsupported model). Backoff 2s→4s→8s…→60s cap. Built-in slash commands:
+#   /retry, /retry status, /retry reset. No deps.
+#
+# Both are installed as Pi extensions via:  pi install npm:@scope/pi-retry
+# Versions are pinned (npm:@scope/pi-retry@<version>) to prevent unreviewed code
+# from being auto-installed on subsequent bootstrap runs — extensions execute
+# with full system access. Update versions deliberately via Step 6 / pi update.
+# Latest pinned versions as of this bootstrap:
+#   @narumitw/pi-retry      0.31.0
+#   @monotykamary/pi-retry  0.6.9
+NARUMITW_PI_RETRY_VER="0.31.0"
+MONOTYKAMARY_PI_RETRY_VER="0.6.9"
+# The `pi` CLI is expected at /usr/local/bin/pi or $HOME/.local/bin/pi.
+if command -v pi >/dev/null 2>&1; then
+  PI_CMD="$(command -v pi)"
+
+  # @narumitw/pi-retry
+  # Stall watchdog timeout is persisted via the shell helpers block (Step 5)
+  # so it applies to all later `pi` sessions, not just this install process.
+  if "$PI_CMD" list 2>/dev/null | grep -q "npm:@narumitw/pi-retry@${NARUMITW_PI_RETRY_VER}"; then
+    ok "@narumitw/pi-retry already installed ($NARUMITW_PI_RETRY_VER)"
+  else
+    say "installing @narumitw/pi-retry v${NARUMITW_PI_RETRY_VER} (stall watchdog retry)"
+    if "$PI_CMD" install "npm:@narumitw/pi-retry@${NARUMITW_PI_RETRY_VER}" 2>/dev/null; then
+      ok "@narumitw/pi-retry installed"
+    else
+      need "@narumitw/pi-retry install failed (pi CLI or network issue)"
+    fi
+  fi
+
+  # @monotykamary/pi-retry
+  if "$PI_CMD" list 2>/dev/null | grep -q "npm:@monotykamary/pi-retry@${MONOTYKAMARY_PI_RETRY_VER}"; then
+    ok "@monotykamary/pi-retry already installed ($MONOTYKAMARY_PI_RETRY_VER)"
+  else
+    say "installing @monotykamary/pi-retry v${MONOTYKAMARY_PI_RETRY_VER} (catch-all backoff retry)"
+    if "$PI_CMD" install "npm:@monotykamary/pi-retry@${MONOTYKAMARY_PI_RETRY_VER}" 2>/dev/null; then
+      ok "@monotykamary/pi-retry installed"
+    else
+      need "@monotykamary/pi-retry install failed (pi CLI or network issue)"
+    fi
+  fi
+else
+  skip "pi CLI not found — pi-retry extensions not installed"
+  skip "  install manually: pi install npm:@narumitw/pi-retry@${NARUMITW_PI_RETRY_VER}"
+  skip "  install manually: pi install npm:@monotykamary/pi-retry@${MONOTYKAMARY_PI_RETRY_VER}"
+fi
+
+###############################################################################
 say "Step 5: shell helpers (idempotent)"
 ###############################################################################
 SHELLRC="$HOME/.bashrc"
@@ -175,6 +232,9 @@ alias fm-peek='"'"'bash ~/.dotfiles-wsl/fm-peek.sh'"'"'
 alias fm-watch='"'"'bash ~/.dotfiles-wsl/fm-watch.sh'"'"'
 # pull latest dotfiles from GitHub and re-apply
 fm-update() { cd ~/.dotfiles-wsl && git pull --ff-only && ./bootstrap.sh; }
+# pi-retry: stall watchdog timeout (seconds) for @narumitw/pi-retry.
+# Persisted here so it applies to all future pi sessions, not just install.
+export PI_RETRY_STALL_TIMEOUT_MS=30000
 export PATH="$HOME/.local/bin:$PATH"
 '"$FM_BACKEND_LINE"'
 # ---- end dotfiles-wsl ----'
@@ -201,6 +261,15 @@ echo "--- agents ---"
 for t in claude codex pi opencode; do
   if command -v "$t" >/dev/null 2>&1; then echo "   [ok] $t"; else echo "   [--] $t (not installed)"; fi
 done
+echo "--- pi extensions ---"
+if command -v pi >/dev/null 2>&1; then
+  for pkg in "npm:@narumitw/pi-retry" "npm:@monotykamary/pi-retry"; do
+    if pi list 2>/dev/null | grep -q "$pkg"; then echo "   [ok] $pkg";
+    else echo "   [--] $pkg (not installed)"; fi
+  done
+else
+  echo "   [--] pi CLI not found (extensions not installed)"
+fi
 echo "--- firstmate ---"
 if [ -d "$FIRSTMATE_DIR" ]; then echo "   [ok] firstmate @ $(git -C "$FIRSTMATE_DIR" rev-parse --short HEAD 2>/dev/null || echo ?)";
   [ -f "$FIRSTMATE_DIR/config/backend" ] && echo "         backend=$(cat "$FIRSTMATE_DIR/config/backend")" || echo "         backend=tmux (default)"; fi
