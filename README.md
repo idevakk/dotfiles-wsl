@@ -150,6 +150,8 @@ The workaround is applied when:
   as `~/.local/bin/npm`, shadowing the real npm on `PATH`, so plain
   `npm install` picks up the fix with no further wiring.
 
-Detection reads only `/proc/net/if_inet6` and `/proc/net/ipv6_route`, so it works
-on minimal servers without iproute2 (`ip`). If IPv6 is routable (global address
-or a default route present), the workaround is skipped.
+Detection reads only `/proc/net/if_inet6` (global scope `00` entries) and
+`/proc/net/ipv6_route` (real `::/0` default routes — excluding the kernel's
+metric-`ffffffff` placeholder on `lo`), so it works on minimal servers without
+iproute2 (`ip`) and ignores loopback/link-local artifacts. If IPv6 is routable
+(global address or a real default route present), the workaround is skipped.
