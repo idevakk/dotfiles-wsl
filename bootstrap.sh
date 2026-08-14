@@ -154,17 +154,24 @@ say "Step 4a: npm IPv6 fix (Happy Eyeballs workaround)"
 # + ipv4first) via a wrapper script. Detection reads /proc only, so it works
 # on minimal systems without iproute2 (`ip`). No sudo required.
 
-# No global (non-link-local) IPv6 address -> returns 0 (true). Parses
-# /proc/net/if_inet6 (hex host address as first field; link-local = fe80::/10).
+# No global IPv6 address -> returns 0 (true). /proc/net/if_inet6 columns:
+#   addr ifindex prefixlen scope flags ifname
+# Scope 00 = global (universe). ::1 loopback has scope 10 and fe80::/10
+# link-local has scope 20, so matching the scope field excludes both
+# without false positives.
 has_global_v6() {
   [ -f /proc/net/if_inet6 ] || return 1
-  awk '$1 !~ /^fe80/ {found=1} END {exit !found}' /proc/net/if_inet6
+  awk '$4=="00" {found=1} END {exit !found}' /proc/net/if_inet6
 }
 
-# Has a default IPv6 route (dest + prefix both zero) -> returns 0 (true).
+# Has a real default IPv6 route -> returns 0 (true). /proc/net/ipv6_route
+# columns: dest plen src splen gateway metric refcnt use flags ifname.
+# The kernel keeps a ::/0 placeholder installed on lo (metric ffffffff,
+# the "no metric" sentinel) that is NOT a real default route, so require a
+# real metric and a non-lo interface.
 has_default_v6_route() {
   [ -f /proc/net/ipv6_route ] || return 1
-  awk '$1=="00000000000000000000000000000000" && $2=="00" {found=1} END {exit !found}' /proc/net/ipv6_route
+  awk '$1=="00000000000000000000000000000000" && $2=="00" && $6!="ffffffff" && $10!="lo" {found=1} END {exit !found}' /proc/net/ipv6_route
 }
 
 IS_WSL=0
