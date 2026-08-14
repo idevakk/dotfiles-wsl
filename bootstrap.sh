@@ -246,12 +246,25 @@ if [ "$NEED_WORKAROUND" -ne 0 ]; then
     say "no routable IPv6 detected — installing npm IPv6 workaround"
 
     NPM_WRAPPER="$BIN_DIR/npm"
-    cp "$REPO_DIR/wsl-npm-wrapper.sh" "$NPM_WRAPPER"
-    chmod +x "$NPM_WRAPPER"
-    ok "wsl-npm-wrapper.sh -> $NPM_WRAPPER (shadows real npm for preload)"
+    INSTALL_OK=1
+    if [ -e "$NPM_WRAPPER" ] || [ -L "$NPM_WRAPPER" ]; then
+      if [ "$(readlink -f "$NPM_WRAPPER" 2>/dev/null)" != "$REPO_DIR/wsl-npm-wrapper.sh" ] && ! cmp -s "$NPM_WRAPPER" "$REPO_DIR/wsl-npm-wrapper.sh" 2>/dev/null; then
+        INSTALL_OK=0
+        skip "$NPM_WRAPPER already exists and is not the dotfiles wrapper — the real npm there must be moved/removed (or the workaround installed under another name/dir) before re-running, so the wrapper can shadow it; npm left untouched and working"
+      fi
+    fi
+    if [ "$INSTALL_OK" -eq 1 ]; then
+      if [ "$NPM_WRAPPER" -ef "$REPO_DIR/wsl-npm-wrapper.sh" ]; then
+        ok "$NPM_WRAPPER already the dotfiles wrapper"
+      else
+        cp "$REPO_DIR/wsl-npm-wrapper.sh" "$NPM_WRAPPER"
+        chmod +x "$NPM_WRAPPER"
+        ok "wsl-npm-wrapper.sh -> $NPM_WRAPPER (shadows real npm for preload)"
+      fi
 
-    if [ "$PRELOAD_OK" -eq 1 ]; then
-      ok "wsl-npm-asf-fix.js reachable at $LINK/wsl-npm-asf-fix.js"
+      if [ "$PRELOAD_OK" -eq 1 ]; then
+        ok "wsl-npm-asf-fix.js reachable at $LINK/wsl-npm-asf-fix.js"
+      fi
     fi
   fi
 else
