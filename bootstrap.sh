@@ -181,13 +181,18 @@ NEED_WORKAROUND=0
 if [ "$IS_WSL" -eq 1 ]; then
   # WSL NAT DNS: AAAA resolves but IPv6 routes unreachable -> always apply.
   NEED_WORKAROUND=1
-elif ! has_global_v6 && ! has_default_v6_route; then
-  # No global v6 address AND no v6 default route -> IPv6 not routable;
-  # identical failure mode to WSL, so preload the same fix.
+elif ! has_global_v6 || ! has_default_v6_route; then
+  # IPv6 is only fully routable with BOTH a global (non-link-local) address
+  # AND a real default route. Missing either one reproduces the WSL failure
+  # mode (AAAA resolves, v6 connect hangs -> ETIMEDOUT), so preload the same
+  # fix unless both probes succeed.
   NEED_WORKAROUND=1
 fi
 
 # Verify the preload script is reachable via the repo symlink (common step).
+# need() only reports, so a missing preload must also gate the install
+# below: a wrapper that hard-fails on a missing preload is strictly worse
+# than not installing it at all.
 PRELOAD_OK=0
 if [ -f "$LINK/wsl-npm-asf-fix.js" ]; then
   PRELOAD_OK=1
@@ -195,7 +200,9 @@ else
   need "wsl-npm-asf-fix.js not found at $LINK/ (wrapper will fail)"
 fi
 
-if [ "$NEED_WORKAROUND" -ne 0 ]; then
+if [ "$PRELOAD_OK" -ne 1 ]; then
+  skip "preload missing — npm IPv6 workaround not installed (no wrapper, no pi npmCommand injection)"
+elif [ "$NEED_WORKAROUND" -ne 0 ]; then
   if [ "$IS_WSL" -eq 1 ]; then
     say "WSL detected — installing npm IPv6 workaround"
 
@@ -206,9 +213,7 @@ if [ "$NEED_WORKAROUND" -ne 0 ]; then
     chmod +x "$WSL_NPM_WRAPPER"
     ok "wsl-npm-wrapper.sh -> $WSL_NPM_WRAPPER"
 
-    if [ "$PRELOAD_OK" -eq 1 ]; then
-      ok "wsl-npm-asf-fix.js reachable at $LINK/wsl-npm-asf-fix.js"
-    fi
+    ok "wsl-npm-asf-fix.js reachable at $LINK/wsl-npm-asf-fix.js"
 
     # Inject npmCommand into pi's settings.json (only if pi is installed)
     if command -v pi >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
@@ -262,13 +267,11 @@ if [ "$NEED_WORKAROUND" -ne 0 ]; then
         ok "wsl-npm-wrapper.sh -> $NPM_WRAPPER (shadows real npm for preload)"
       fi
 
-      if [ "$PRELOAD_OK" -eq 1 ]; then
-        ok "wsl-npm-asf-fix.js reachable at $LINK/wsl-npm-asf-fix.js"
-      fi
+      ok "wsl-npm-asf-fix.js reachable at $LINK/wsl-npm-asf-fix.js"
     fi
   fi
 else
-  skip "WSL not detected and global IPv6 is routable — npm IPv6 workaround not needed"
+  skip "WSL not detected and IPv6 is fully routable (global address + default route) — npm IPv6 workaround not needed"
 fi
 
 ###############################################################################
