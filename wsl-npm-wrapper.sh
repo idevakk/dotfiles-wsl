@@ -14,19 +14,22 @@
 set -euo pipefail
 
 PRELOAD="$HOME/.dotfiles-wsl/wsl-npm-asf-fix.js"
-SELF="$(readlink -f "$0")"
 REAL_NPM=""
 
-# Scan $PATH for a real npm binary, skipping our own resolved path so this
-# script never recurses into itself regardless of the name/location it is
-# installed under (e.g. as `npm` in ~/.local/bin on a server it shadows the
-# real npm on PATH).
+# Scan $PATH for a real npm binary, skipping wrapper copies so this script
+# never recurses into itself regardless of the name/location it is installed
+# under (e.g. as `npm` in ~/.local/bin on a server it shadows the real npm on
+# PATH). A candidate is a wrapper copy — skipped — if it references the unique
+# preload filename `wsl-npm-asf-fix.js`; this also covers stale duplicate
+# copies of older wrapper versions left by earlier installs, which a plain
+# resolved-path comparison would not detect. The real npm never contains that
+# string.
 if command -v npm >/dev/null 2>&1; then
   IFS=':' read -r -a _paths <<< "$PATH"
   for _dir in "${_paths[@]}"; do
     [ -n "$_dir" ] || _dir="."
     _cand="$_dir/npm"
-    if [ -x "$_cand" ] && [ "$(readlink -f "$_cand")" != "$SELF" ]; then
+    if [ -x "$_cand" ] && ! grep -q 'wsl-npm-asf-fix' "$_cand" 2>/dev/null; then
       REAL_NPM="$(readlink -f "$_cand")"
       break
     fi
