@@ -52,6 +52,10 @@ link "$HOME/.config/nvim"                 "$LINK/$rel/.config/nvim"
 link "$HOME/.config/wezterm"              "$LINK/$rel/.config/wezterm"
 link "$HOME/.config/herdr"                "$LINK/$rel/.config/herdr"
 link "$HOME/.local/bin/sysres"            "$LINK/$rel/.local/bin/sysres"
+# Ensure the bin tool is executable even in old/Windows-clone checkouts that
+# lost the executable bit (FAT/exFAT, or git core.fileMode=0). Scoped to sysres
+# (the only bin tool here); user-space only, no sudo.
+chmod +x "$HOME/.local/bin/sysres"
 # pi agent - themes + extensions edit-in-place from repo.
 # settings.json + models.json intentionally NOT linked: Pi-managed and hold
 # provider API keys; bootstrap only merges aesthetic keys into a live settings.
@@ -308,6 +312,16 @@ if ! grep -q 'HOME/.local/bin' "$SHELLRC"; then
 fi
 ok "aliases + PATH in $SHELLRC (single block)"
 
+# ~/.profile: also export ~/.local/bin on PATH so login / non-interactive shells
+# (which source .profile, not .bashrc - e.g. agent tool shells) discover sysres.
+PROFILE_RC="$HOME/.profile"
+if ! grep -q 'HOME/.local/bin' "$PROFILE_RC" 2>/dev/null; then
+  printf '\n# dotfiles-wsl: gh etc (login / non-interactive shells)\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$PROFILE_RC"
+  ok "PATH export in $PROFILE_RC"
+else
+  skip "PATH already in $PROFILE_RC"
+fi
+
 ###############################################################################
 say "Step 6: verify"
 ###############################################################################
@@ -315,6 +329,16 @@ echo "--- tools ---"
 for t in git tmux claude jq nvim herdr treehouse node gh; do
   if command -v "$t" >/dev/null 2>&1; then echo "   [ok] $t"; else echo "   [--] $t"; fi
 done
+echo "--- sysres diagnostic ---"
+if sysres_path="$(command -v sysres)" && [ -x "$sysres_path" ]; then
+  if sysres_version="$("$sysres_path" --version 2>&1)"; then
+    ok "sysres: $sysres_path ($sysres_version)"
+  else
+    need "sysres at $sysres_path failed --version: $sysres_version"
+  fi
+else
+  need "sysres NOT on PATH or not executable"
+fi
 echo "--- agents ---"
 for t in claude codex pi opencode; do
   if command -v "$t" >/dev/null 2>&1; then echo "   [ok] $t"; else echo "   [--] $t (not installed)"; fi
