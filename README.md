@@ -122,3 +122,34 @@ for crew work. `fm-pi`'s `--approve` only trusts project-local files, not a full
 
 - `home/AGENTS.md` is the global agent policy. Edit it to match *your* rules.
 - This is WSL/Ubuntu: no nix-darwin, no homebrew, no macOS paths.
+
+## npm IPv6 / Happy-Eyeballs workaround
+
+Node ≥20 defaults `autoSelectFamily=true` (Happy Eyeballs), which tries IPv6
+first. On hosts where AAAA records resolve but there is *no routable IPv6 path*
+(WSL's NAT DNS, and many plain Ubuntu servers/VPS/containers), the IPv6 connect
+hangs and `npm` eventually fails with `ETIMEDOUT` — while `curl` works because it
+falls back to IPv4.
+
+`bootstrap.sh` Step 4a detects this and installs a wrapper + preload fix in
+user-space (`~/.local/bin`, no sudo):
+
+- **`wsl-npm-asf-fix.js`** is preloaded into Node and calls
+  `net.setDefaultAutoSelectFamily(false)` and `dns.setDefaultResultOrder("ipv4first")`,
+  so npm connects over IPv4 immediately.
+- **`wsl-npm-wrapper.sh`** execs the real `npm` with the preload `--require`d. It
+  scans `$PATH` for the real npm and skips its own resolved path, so it never
+  recurses into itself regardless of the name/location it is installed under.
+
+The workaround is applied when:
+
+- the host is **WSL** (always), where pi's `npmCommand` is pointed at the wrapper,
+  or
+- a **non-WSL** host has **no global (non-link-local) IPv6 address AND no IPv6
+  default route** — the same broken-IPv6 condition. Here the wrapper is installed
+  as `~/.local/bin/npm`, shadowing the real npm on `PATH`, so plain
+  `npm install` picks up the fix with no further wiring.
+
+Detection reads only `/proc/net/if_inet6` and `/proc/net/ipv6_route`, so it works
+on minimal servers without iproute2 (`ip`). If IPv6 is routable (global address
+or a default route present), the workaround is skipped.
