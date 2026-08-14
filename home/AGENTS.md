@@ -18,4 +18,6 @@
 - This machine is Windows + WSL2 Ubuntu. Do NOT propose installing Nix/home-manager or
   macOS-only tooling (nix-darwin, homebrew, wezterm-mac paths) here.
 - `sysres` is a lightweight agent diagnostic tool for checking system resources.
+  It reads only /proc and /sys (no sudo, user-space only) and is on PATH after
+  `./bootstrap.sh` (also exported via `~/.profile` for login/non-interactive shells).
   To learn its uses, run `sysres --help`.
