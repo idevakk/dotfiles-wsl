@@ -331,7 +331,11 @@ for t in git tmux claude jq nvim herdr treehouse node gh; do
 done
 echo "--- sysres diagnostic ---"
 if sysres_path="$(command -v sysres)" && [ -x "$sysres_path" ]; then
-  ok "sysres: $sysres_path ($(sysres --version 2>&1))"
+  if sysres_version="$("$sysres_path" --version 2>&1)"; then
+    ok "sysres: $sysres_path ($sysres_version)"
+  else
+    need "sysres at $sysres_path failed --version: $sysres_version"
+  fi
 else
   need "sysres NOT on PATH or not executable"
 fi
