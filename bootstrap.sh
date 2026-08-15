@@ -144,60 +144,134 @@ for name in claude codex pi opencode; do
 done
 
 ###############################################################################
-say "Step 4a: WSL npm IPv6 fix (Happy Eyeballs workaround)"
+say "Step 4a: npm IPv6 fix (Happy Eyeballs workaround)"
 ###############################################################################
 # Node ≥20 defaults autoSelectFamily=true ("Happy Eyeballs"), which tries
-# IPv6 first. Under WSL's NAT DNS, AAAA records resolve but IPv6 routes
-# are unreachable, so npm hangs on connect and eventually ETIMEDOUT.
-# Fix: preload wsl-npm-asf-fix.js (sets autoSelectFamily=false) via a
-# wrapper script, and tell pi to use that wrapper via `npmCommand`.
-# This block is a no-op on non-WSL systems.
-if grep -qiE '(microsoft|wsl)' /proc/version 2>/dev/null; then
-  say "WSL detected — installing npm IPv6 workaround"
+# IPv6 first. On hosts where AAAA records resolve but there is no routable
+# IPv6 path (WSL NAT DNS, many plain servers/VPS/containers), the IPv6
+# connect hangs and npm eventually ETIMEDOUT; curl works because it falls
+# back to IPv4. Fix: preload wsl-npm-asf-fix.js (sets autoSelectFamily=false
+# + ipv4first) via a wrapper script. Detection reads /proc only, so it works
+# on minimal systems without iproute2 (`ip`). No sudo required.
 
-  # Install the wrapper script to ~/.local/bin
-  WSL_NPM_WRAPPER="$BIN_DIR/wsl-npm-wrapper.sh"
-  cp "$REPO_DIR/wsl-npm-wrapper.sh" "$WSL_NPM_WRAPPER"
-  chmod +x "$WSL_NPM_WRAPPER"
-  ok "wsl-npm-wrapper.sh -> $WSL_NPM_WRAPPER"
+# No global IPv6 address -> returns 0 (true). /proc/net/if_inet6 columns:
+#   addr ifindex prefixlen scope flags ifname
+# Scope 00 = global (universe). ::1 loopback has scope 10 and fe80::/10
+# link-local has scope 20, so matching the scope field excludes both
+# without false positives.
+has_global_v6() {
+  [ -f /proc/net/if_inet6 ] || return 1
+  awk '$4=="00" {found=1} END {exit !found}' /proc/net/if_inet6
+}
 
-  # Verify the preload script is reachable via the repo symlink
-  if [ -f "$LINK/wsl-npm-asf-fix.js" ]; then
+# Has a real default IPv6 route -> returns 0 (true). /proc/net/ipv6_route
+# columns: dest plen src splen gateway metric refcnt use flags ifname.
+# The kernel keeps a ::/0 placeholder installed on lo (metric ffffffff,
+# the "no metric" sentinel) that is NOT a real default route, so require a
+# real metric and a non-lo interface.
+has_default_v6_route() {
+  [ -f /proc/net/ipv6_route ] || return 1
+  awk '$1=="00000000000000000000000000000000" && $2=="00" && $6!="ffffffff" && $10!="lo" {found=1} END {exit !found}' /proc/net/ipv6_route
+}
+
+IS_WSL=0
+if grep -qiE '(microsoft|wsl)' /proc/version 2>/dev/null; then IS_WSL=1; fi
+
+NEED_WORKAROUND=0
+if [ "$IS_WSL" -eq 1 ]; then
+  # WSL NAT DNS: AAAA resolves but IPv6 routes unreachable -> always apply.
+  NEED_WORKAROUND=1
+elif ! has_global_v6 || ! has_default_v6_route; then
+  # IPv6 is only fully routable with BOTH a global (non-link-local) address
+  # AND a real default route. Missing either one reproduces the WSL failure
+  # mode (AAAA resolves, v6 connect hangs -> ETIMEDOUT), so preload the same
+  # fix unless both probes succeed.
+  NEED_WORKAROUND=1
+fi
+
+# Verify the preload script is reachable via the repo symlink (common step).
+# need() only reports, so a missing preload must also gate the install
+# below: a wrapper that hard-fails on a missing preload is strictly worse
+# than not installing it at all.
+PRELOAD_OK=0
+if [ -f "$LINK/wsl-npm-asf-fix.js" ]; then
+  PRELOAD_OK=1
+else
+  need "wsl-npm-asf-fix.js not found at $LINK/ (wrapper will fail)"
+fi
+
+if [ "$PRELOAD_OK" -ne 1 ]; then
+  skip "preload missing — npm IPv6 workaround not installed (no wrapper, no pi npmCommand injection)"
+elif [ "$NEED_WORKAROUND" -ne 0 ]; then
+  if [ "$IS_WSL" -eq 1 ]; then
+    say "WSL detected — installing npm IPv6 workaround"
+
+    # Install the wrapper script (as wsl-npm-wrapper.sh, kept for pi npmCommand
+    # back-compat) to ~/.local/bin
+    WSL_NPM_WRAPPER="$BIN_DIR/wsl-npm-wrapper.sh"
+    cp "$REPO_DIR/wsl-npm-wrapper.sh" "$WSL_NPM_WRAPPER"
+    chmod +x "$WSL_NPM_WRAPPER"
+    ok "wsl-npm-wrapper.sh -> $WSL_NPM_WRAPPER"
+
     ok "wsl-npm-asf-fix.js reachable at $LINK/wsl-npm-asf-fix.js"
-  else
-    need "wsl-npm-asf-fix.js not found at $LINK/ (wrapper will fail)"
-  fi
 
-  # Inject npmCommand into pi's settings.json (only if pi is installed)
-  if command -v pi >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-    PI_SETTINGS="$HOME/.pi/agent/settings.json"
-    mkdir -p "$(dirname "$PI_SETTINGS")"
-    if [ -f "$PI_SETTINGS" ]; then
-      # Only inject if npmCommand is not already set
-      if jq -e '.npmCommand' "$PI_SETTINGS" >/dev/null 2>&1; then
-        ok "npmCommand already set in pi settings.json (left as-is)"
+    # Inject npmCommand into pi's settings.json (only if pi is installed)
+    if command -v pi >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+      PI_SETTINGS="$HOME/.pi/agent/settings.json"
+      mkdir -p "$(dirname "$PI_SETTINGS")"
+      if [ -f "$PI_SETTINGS" ]; then
+        # Only inject if npmCommand is not already set
+        if jq -e '.npmCommand' "$PI_SETTINGS" >/dev/null 2>&1; then
+          ok "npmCommand already set in pi settings.json (left as-is)"
+        else
+          jq --arg wrapper "$WSL_NPM_WRAPPER" \
+             '. + {"npmCommand": [$wrapper]}' \
+             "$PI_SETTINGS" > "$PI_SETTINGS.tmp" \
+            && mv "$PI_SETTINGS.tmp" "$PI_SETTINGS" \
+            && ok "npmCommand injected into pi settings.json" \
+            || need "failed to merge npmCommand into pi settings.json"
+        fi
       else
-        jq --arg wrapper "$WSL_NPM_WRAPPER" \
-           '. + {"npmCommand": [$wrapper]}' \
-           "$PI_SETTINGS" > "$PI_SETTINGS.tmp" \
-          && mv "$PI_SETTINGS.tmp" "$PI_SETTINGS" \
-          && ok "npmCommand injected into pi settings.json" \
-          || need "failed to merge npmCommand into pi settings.json"
+        # No existing settings — create minimal file with npmCommand
+        printf '{"npmCommand":["%s"]}\n' "$WSL_NPM_WRAPPER" > "$PI_SETTINGS"
+        ok "created pi settings.json with npmCommand"
       fi
     else
-      # No existing settings — create minimal file with npmCommand
-      printf '{"npmCommand":["%s"]}\n' "$WSL_NPM_WRAPPER" > "$PI_SETTINGS"
-      ok "created pi settings.json with npmCommand"
+      if ! command -v pi >/dev/null 2>&1; then
+        skip "pi not installed — npmCommand not injected (will be set on next run)"
+      elif ! command -v jq >/dev/null 2>&1; then
+        skip "jq not available — npmCommand not injected (install jq and re-run)"
+      fi
     fi
   else
-    if ! command -v pi >/dev/null 2>&1; then
-      skip "pi not installed — npmCommand not injected (will be set on next run)"
-    elif ! command -v jq >/dev/null 2>&1; then
-      skip "jq not available — npmCommand not injected (install jq and re-run)"
+    # Non-WSL host with broken IPv6: install the wrapper AS `npm` in the
+    # already-on-PATH ~/.local/bin. It shadows the real npm (found via PATH
+    # scan, never itself) so plain `npm install` gets the preload with zero
+    # extra wiring. No sudo, no pi settings changes needed.
+    say "no routable IPv6 detected — installing npm IPv6 workaround"
+
+    NPM_WRAPPER="$BIN_DIR/npm"
+    INSTALL_OK=1
+    if [ -e "$NPM_WRAPPER" ] || [ -L "$NPM_WRAPPER" ]; then
+      if [ "$(readlink -f "$NPM_WRAPPER" 2>/dev/null)" != "$REPO_DIR/wsl-npm-wrapper.sh" ] && ! cmp -s "$NPM_WRAPPER" "$REPO_DIR/wsl-npm-wrapper.sh" 2>/dev/null; then
+        INSTALL_OK=0
+        skip "$NPM_WRAPPER already exists and is not the dotfiles wrapper — the real npm there must be moved/removed (or the workaround installed under another name/dir) before re-running, so the wrapper can shadow it; npm left untouched and working"
+      fi
+    fi
+    if [ "$INSTALL_OK" -eq 1 ]; then
+      if [ "$NPM_WRAPPER" -ef "$REPO_DIR/wsl-npm-wrapper.sh" ]; then
+        ok "$NPM_WRAPPER already the dotfiles wrapper"
+      else
+        cp "$REPO_DIR/wsl-npm-wrapper.sh" "$NPM_WRAPPER"
+        chmod +x "$NPM_WRAPPER"
+        ok "wsl-npm-wrapper.sh -> $NPM_WRAPPER (shadows real npm for preload)"
+      fi
+
+      ok "wsl-npm-asf-fix.js reachable at $LINK/wsl-npm-asf-fix.js"
     fi
   fi
 else
-  skip "not WSL — IPv6 workaround not needed"
+  skip "WSL not detected and IPv6 is fully routable (global address + default route) — npm IPv6 workaround not needed"
 fi
 
 ###############################################################################
